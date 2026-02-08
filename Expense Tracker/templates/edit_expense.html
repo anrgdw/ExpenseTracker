@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-center">
+    <div class="panel form-panel">
+        <div class="panel-header">
+            <h1>Edit Expense</h1>
+            <p class="panel-subtitle">Update the details of your expense.</p>
+        </div>
+
+        <form method="post" class="form-grid">
+            <label for="edit-date">Date</label>
+            <input id="edit-date" type="date" name="date" value="{{ expense['date'] }}" required>
+
+            <label for="edit-item">Item</label>
+            <input id="edit-item" type="text" name="item" value="{{ expense['item'] }}" required>
+
+            <label for="edit-category">Category</label>
+            <select id="edit-category" name="category_id" required>
+                {% for cat in categories %}
+                <option value="{{ cat['id'] }}"
+                        {% if cat['id'] == expense['category_id'] %}selected{% endif %}>
+                {{ cat['name'] }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <label for="edit-amount">Amount</label>
+            <input id="edit-amount" type="number" name="amount" value="{{ expense['amount'] }}" required>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Update Expense</button>
+                <a href="/expenses" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
