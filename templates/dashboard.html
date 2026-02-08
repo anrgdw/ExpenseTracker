@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<div class="page-header centered">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="muted">A clean snapshot of your spending.</p>
+    </div>
+</div>
+
+<div class="filters">
+    <div class="filter-group">
+        <a href="{{ url_for('dashboard') }}"
+           class="filter-btn {% if not filter_type and not from_date and not to_date %}active{% endif %}">
+            All
+        </a>
+        <a href="{{ url_for('dashboard', filter='week') }}"
+           class="filter-btn {% if filter_type == 'week' %}active{% endif %}">
+            Last Week
+        </a>
+        <a href="{{ url_for('dashboard', filter='month') }}"
+           class="filter-btn {% if filter_type == 'month' %}active{% endif %}">
+            Last 30 Days
+        </a>
+        <a href="{{ url_for('dashboard', filter='year') }}"
+           class="filter-btn {% if filter_type == 'year' %}active{% endif %}">
+            Last 365 Days
+        </a>
+    </div>
+
+    <form method="get" action="{{ url_for('dashboard') }}" class="custom-filter custom-filter--inline">
+        <div class="date-field">
+            <label for="from-date">From</label>
+            <input id="from-date" type="date" name="from" value="{{ from_date or '' }}" required>
+        </div>
+
+        <div class="date-field">
+            <label for="to-date">To</label>
+            <input id="to-date" type="date" name="to" value="{{ to_date or '' }}" required>
+        </div>
+
+        <button type="submit" class="btn btn-ghost">Apply</button>
+    </form>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <p class="stat-label">
+            {% if filter_type or (from_date and to_date) %}
+                This Period
+            {% else %}
+                This Month
+            {% endif %}
+        </p>
+        <h2 class="stat-value">&#8377; {{ this_month }}</h2>
+        <span class="stat-meta trend {{ trend_color }}">
+            {% if trend == "up" %}
+                &#8593; {{ change_percent }}% vs last month
+            {% else %}
+                &#8595; {{ change_percent }}% vs last month
+            {% endif %}
+        </span>
+    </div>
+
+    <div class="stat-card">
+        <p class="stat-label">Last Month (overall)</p>
+        <h2 class="stat-value">&#8377; {{ last_month }}</h2>
+    </div>
+
+    <div class="stat-card">
+        <p class="stat-label">
+            Avg / Day
+            {% if filter_type == 'week' %}(7 days){% endif %}
+            {% if filter_type == 'month' %}(30 days){% endif %}
+            {% if filter_type == 'year' %}(365 days){% endif %}
+            {% if from_date and to_date %}(custom){% endif %}
+        </p>
+        <h2 class="stat-value">&#8377; {{ avg_daily }}</h2>
+    </div>
+
+    <div class="stat-card accent-card">
+        <p class="stat-label">Top Category</p>
+        <h2 class="stat-value">{{ top_category_name or 'N/A' }}</h2>
+        <span class="stat-meta">&#8377; {{ top_category_amount or 0 }}</span>
+    </div>
+</div>
+
+<div class="chart-grid">
+    <div class="chart-card">
+        <h3>Expense by Category</h3>
+        <canvas id="pieChart"></canvas>
+    </div>
+
+    <div class="chart-card">
+        <h3>Category Comparison</h3>
+        <canvas id="barChart"></canvas>
+    </div>
+</div>
+
+<div class="chart-card full-width">
+    <h3>Category-wise Monthly Trend</h3>
+    <canvas id="categoryMonthlyChart"></canvas>
+ </div>
+
+<div class="chart-card full-width">
+    <h3>Monthly Expense Trend</h3>
+    <canvas id="monthlyTrendChart"></canvas>
+ </div>
+
+<div class="insight-section">
+    <div class="insight-card">
+        <h4>Top Spending Category</h4>
+        <p>{{ top_category_name }} (&#8377; {{ top_category_amount }})</p>
+    </div>
+
+    <div class="insight-card">
+        <h4>Highest Expense</h4>
+        <p>{{ highest_item }} - &#8377; {{ highest_amount }}</p>
+    </div>
+
+    <div class="insight-card">
+        <h4>Spending Trend</h4>
+        <p>{{ trend_message }}</p>
+    </div>
+
+    <div class="insight-card">
+        <h4>Highest Spending Month</h4>
+        <p>{{ highest_month }} - &#8377; {{ highest_month_amount }}</p>
+    </div>
+</div>
+
+<div class="panel table-card">
+    <div class="table-header">
+        <h3>Recent Expenses</h3>
+        <a href="{{ url_for('all_expenses') }}" class="btn btn-secondary btn-sm">View More</a>
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Item</th>
+                <th>Category</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for exp in recent_expenses %}
+            <tr>
+                <td data-label="Date">{{ exp['date'] }}</td>
+                <td data-label="Item">{{ exp['item'] }}</td>
+                <td data-label="Category"><span class="chip" style="{{ exp['category'] | category_style }}">{{ exp['category'] }}</span></td>
+                <td data-label="Amount">&#8377; {{ exp['amount'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+    const labels = {{ labels | tojson }};
+    const values = {{ values | tojson }};
+    const palette = ['#7f8bff', '#6dc6ff', '#f5b971', '#8ed7b2', '#f28fb1', '#c1c7dd', '#9bb0ff'];
+
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const animationBase = {
+        duration: isMobile ? 700 : 1200,
+        easing: 'easeOutQuart'
+    };
+
+    new Chart(document.getElementById('pieChart'), {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: values,
+                backgroundColor: palette,
+                borderWidth: 1,
+                borderColor: '#ffffff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            radius: '85%',
+            animation: {
+                ...animationBase,
+                delay: (context) => context.dataIndex * 120
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        boxWidth: 10,
+                        padding: 12
+                    }
+                }
+            }
+        }
+    });
+
+    new Chart(document.getElementById('barChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Expense Amount',
+                data: values,
+                backgroundColor: palette,
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                ...animationBase,
+                delay: (context) => context.dataIndex * 120
+            },
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+
+    const catMonths = {{ category_month_labels | tojson }};
+    const categoryDatasets = {{ category_datasets | tojson }};
+
+    new Chart(document.getElementById('categoryMonthlyChart'), {
+        type: 'line',
+        data: {
+            labels: catMonths,
+            datasets: categoryDatasets.map((ds, index) => ({
+                label: ds.label,
+                data: ds.data,
+                borderWidth: 2,
+                tension: 0.3,
+                borderColor: palette[index % palette.length],
+                backgroundColor: palette[index % palette.length],
+                fill: false
+            }))
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                ...animationBase,
+                delay: (context) => context.dataIndex * 80
+            },
+            scales: {
+                y: { beginAtZero: true }
+            },
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+
+    const months = {{ months | tojson }};
+    const monthlyTotals = {{ monthly_totals | tojson }};
+
+    new Chart(document.getElementById('monthlyTrendChart'), {
+        type: 'line',
+        data: {
+            labels: months,
+            datasets: [{
+                label: 'Total Expense',
+                data: monthlyTotals,
+                borderWidth: 2,
+                tension: 0.3,
+                borderColor: '#7f8bff',
+                backgroundColor: 'rgba(127, 139, 255, 0.2)',
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                ...animationBase,
+                delay: (context) => context.dataIndex * 80
+            },
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+</script>
+{% endblock %}
