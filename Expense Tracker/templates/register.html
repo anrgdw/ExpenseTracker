@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="auth-shell">
+    <div class="auth-card">
+        <div class="auth-tabs">
+            <a href="{{ url_for('login') }}" class="auth-tab">Sign In</a>
+            <a href="{{ url_for('register') }}" class="auth-tab active">Sign Up</a>
+        </div>
+
+        <h1 class="auth-title">Sign Up</h1>
+        <p class="auth-subtitle">Create your account to get started:</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-container">
+                    {% for category, message in messages %}
+                        <div class="flash flash-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form action="{{ url_for('register') }}" method="post" class="form-grid">
+            <label for="register-name">Name</label>
+            <input id="register-name" type="text" name="name" value="{{ name or '' }}" placeholder="Enter your name" required autofocus>
+
+            <label for="register-email">Email</label>
+            <input id="register-email" type="email" name="email" value="{{ email or '' }}" placeholder="Enter your email" required>
+
+            <label for="register-password">Password</label>
+            <input id="register-password" type="password" name="password" placeholder="Create a password" required>
+
+            <button type="submit" class="btn btn-primary">Sign Up</button>
+        </form>
+
+        <p class="auth-footer">
+            Already have an account?
+            <a class="text-link" href="{{ url_for('login') }}">Sign In</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
