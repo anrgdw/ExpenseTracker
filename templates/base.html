@@ -18,19 +18,33 @@
                 <span class="brand-accent">Tracker</span>
             </div>
             {% if current_user %}
+                <input id="nav-toggle" class="nav-toggle-input" type="checkbox" aria-hidden="true">
                 <nav class="nav-links">
                     <a href="/" class="{% if request.path == '/' %}active{% endif %}">Add Expense</a>
                     <a href="/expenses" class="{% if request.path.startswith('/expenses') or request.path.startswith('/edit/') or request.path.startswith('/delete/') %}active{% endif %}">All Expenses</a>
                     <a href="/dashboard" class="{% if request.path.startswith('/dashboard') %}active{% endif %}">Dashboard</a>
                     <a href="/categories" class="{% if request.path.startswith('/categories') or request.path.startswith('/add-category') or request.path.startswith('/delete-category') %}active{% endif %}">Categories</a>
                 </nav>
-                <div class="nav-user">
-                    <span class="avatar">{{ user_initials }}</span>
-                    <span class="nav-user-name">{{ current_user.name }}</span>
-                    <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Logout</a>
+                <div class="nav-actions">
+                    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Toggle navigation">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </label>
+                    <details class="profile-menu">
+                        <summary class="nav-user" aria-label="Account menu">
+                            <span class="avatar">{{ user_initials }}</span>
+                            <span class="nav-user-name">{{ current_user.name }}</span>
+                            <span class="chevron">v</span>
+                            <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm logout-inline">Logout</a>
+                        </summary>
+                        <div class="profile-dropdown">
+                            <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Logout</a>
+                        </div>
+                    </details>
                 </div>
             {% else %}
-                <div class="nav-auth">
+                <div class="nav-auth nav-actions">
                     <a href="{{ url_for('login') }}" class="btn btn-sm {% if request.path == '/login' %}btn-primary{% else %}btn-secondary{% endif %}">Login</a>
                     <a href="{{ url_for('register') }}" class="btn btn-sm {% if request.path == '/register' %}btn-primary{% else %}btn-secondary{% endif %}">Sign Up</a>
                 </div>
