@@ -1002,7 +1002,7 @@ select:focus {
     }
 
     .nav-toggle-btn {
-        display: inline-flex;
+        display: none;
     }
 
     .nav-user {
@@ -1037,30 +1037,30 @@ select:focus {
     }
 
     .nav-links {
-        display: none;
+        display: flex;
         order: unset;
         grid-column: 1 / -1;
         grid-row: 2;
         width: 100%;
         justify-content: flex-start;
-        align-items: stretch;
-        flex-direction: column;
-        padding: 8px;
-        gap: 6px;
+        align-items: center;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 6px 2px 4px;
+        gap: 8px;
         border-top: 1px solid var(--panel-border);
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.75);
-        border: 1px solid var(--panel-border);
-    }
-
-    .nav-toggle-input:checked ~ .nav-links {
-        display: flex;
     }
 
     .nav-links a {
         font-size: 0.88rem;
         padding: 8px 12px;
-        width: 100%;
+        white-space: nowrap;
+    }
+
+    .nav-links::-webkit-scrollbar {
+        height: 0;
     }
 
     .page-header {
@@ -1068,7 +1068,7 @@ select:focus {
         align-items: flex-start;
     }
 
-    /* Mobile filters: smaller, wrapable pills + compact date inputs */
+    /* Mobile filters: smaller pills + compact date inputs */
     .filters {
         flex-direction: column;
         align-items: stretch;
@@ -1106,6 +1106,24 @@ select:focus {
     .custom-filter input {
         width: 100%;
         padding: 8px 10px;
+    }
+
+    /* Keep From/To side-by-side on mobile */
+    .custom-filter--inline {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .custom-filter--inline .date-field {
+        width: 100%;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .custom-filter--inline .btn {
+        grid-column: 1 / -1;
+        justify-self: start;
     }
 
     .auth-tabs {
@@ -1262,20 +1280,13 @@ select:focus {
         padding: 6px 8px;
     }
 
-    .custom-filter,
     .custom-filter--inline {
-        flex-direction: column;
-        align-items: stretch;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
     }
 
-    .custom-filter input {
-        width: 100%;
-    }
-
-    .date-field {
-        width: 100%;
-        flex-direction: column;
-        align-items: flex-start;
+    .custom-filter--inline .date-field label {
+        font-size: 0.8rem;
     }
 
     .panel,
