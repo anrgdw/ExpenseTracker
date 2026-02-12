@@ -6,11 +6,15 @@ from collections import defaultdict
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
+from datetime import timedelta
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "change_this_in_production")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(os.getenv("SESSION_COOKIE_SECURE", "1") == "1")
 
 DB_NAME = "database.db"
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -287,6 +291,7 @@ def register():
             flash("An account with that email already exists.", "danger")
             return render_template("register.html", name=name, email=email)
 
+        session.permanent = True
         session["user_id"] = user_id
         session["user_name"] = name
         session["user_email"] = email
@@ -320,6 +325,7 @@ def login():
             flash("Invalid email or password.", "danger")
             return render_template("login.html", email=email)
 
+        session.permanent = True
         session["user_id"] = user["id"]
         session["user_name"] = user["name"]
         session["user_email"] = user["email"]
