@@ -1,12 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask import Flask, render_template, request, redirect, url_for, flash, session
 import sqlite3
 from datetime import datetime, timedelta
 from collections import defaultdict
 from functools import wraps
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import check_password_hash
 import os
-from datetime import timedelta
+import secrets
+import hashlib
+import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -106,6 +107,16 @@ def init_db():
                 user_id INTEGER REFERENCES users(id)
             );
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TIMESTAMP NOT NULL,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP NOT NULL
+            );
+        """)
     else:
         # Users table
         conn.execute("""
@@ -133,6 +144,17 @@ def init_db():
                 amount REAL NOT NULL,
                 user_id INTEGER,
                 FOREIGN KEY (category_id) REFERENCES categories(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
         """)
@@ -255,6 +277,85 @@ def login_required(view):
 
 
 # -----------------------------
+# Password helpers
+# -----------------------------
+def _hash_password(password):
+    # Use bcrypt for new passwords (stronger than default PBKDF2).
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def _verify_password(stored_hash, password):
+    # Support legacy Werkzeug hashes and new bcrypt hashes.
+    if stored_hash.startswith("$2"):
+        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+    return check_password_hash(stored_hash, password)
+
+
+def _parse_db_datetime(value):
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
+
+
+def _to_db_datetime(value):
+    if DB_TYPE == "postgres":
+        return value
+    return value.isoformat()
+
+
+def _store_reset_token(user_id, token_hash, expires_at, created_at):
+    conn = get_db_connection()
+    expires_at_db = _to_db_datetime(expires_at)
+    created_at_db = _to_db_datetime(created_at)
+    # Invalidate any existing active tokens for this user.
+    conn.execute(
+        "UPDATE password_reset_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL",
+        (created_at_db, user_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, used_at, created_at)
+        VALUES (?, ?, ?, NULL, ?)
+        """,
+        (user_id, token_hash, expires_at_db, created_at_db),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _get_reset_token(token_hash):
+    conn = get_db_connection()
+    token_row = conn.execute(
+        """
+        SELECT id, user_id, expires_at, used_at
+        FROM password_reset_tokens
+        WHERE token_hash = ?
+        """,
+        (token_hash,),
+    ).fetchone()
+    conn.close()
+    return token_row
+
+
+def _mark_token_used(token_id, used_at):
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE password_reset_tokens SET used_at = ? WHERE id = ?",
+        (_to_db_datetime(used_at), token_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _send_reset_email(to_email, reset_link):
+    # TODO: integrate with an email provider (SendGrid, SES, Mailgun).
+    # For now, log the link so you can verify the flow in dev.
+    print(f"[Password Reset] Send to {to_email}: {reset_link}")
+
+
+# -----------------------------
 # Authentication
 # -----------------------------
 @app.route("/register", methods=["GET", "POST"])
@@ -273,16 +374,17 @@ def register():
 
         conn = get_db_connection()
         try:
+            password_hash = _hash_password(password)
             if DB_TYPE == "postgres":
                 cursor = conn.execute(
                     "INSERT INTO users (name, email, password) VALUES (?, ?, ?) RETURNING id",
-                    (name, email, generate_password_hash(password)),
+                    (name, email, password_hash),
                 )
                 user_id = cursor.fetchone()["id"]
             else:
                 cursor = conn.execute(
                     "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
-                    (name, email, generate_password_hash(password)),
+                    (name, email, password_hash),
                 )
                 user_id = cursor.lastrowid
             conn.commit()
@@ -321,7 +423,7 @@ def login():
         ).fetchone()
         conn.close()
 
-        if not user or not check_password_hash(user["password"], password):
+        if not user or not _verify_password(user["password"], password):
             flash("Invalid email or password.", "danger")
             return render_template("login.html", email=email)
 
@@ -338,6 +440,94 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+# -----------------------------
+# Password reset
+# -----------------------------
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if session.get("user_id"):
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        if not email:
+            flash("Please enter your email.", "warning")
+            return render_template("forgot_password.html", email=email)
+
+        conn = get_db_connection()
+        user = conn.execute(
+            "SELECT id, email FROM users WHERE email = ?",
+            (email,),
+        ).fetchone()
+        conn.close()
+
+        # Always show the same message to avoid leaking user existence.
+        if user:
+            token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            now = datetime.utcnow()
+            expires_at = now + timedelta(minutes=15)
+            _store_reset_token(user["id"], token_hash, expires_at, now)
+
+            reset_link = url_for(
+                "reset_password",
+                token=token,
+                _external=True,
+            )
+            _send_reset_email(user["email"], reset_link)
+
+        flash("If that email exists, a reset link has been sent.", "success")
+        return render_template("forgot_password.html", email=email)
+
+    return render_template("forgot_password.html")
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    if session.get("user_id"):
+        return redirect(url_for("dashboard"))
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    token_row = _get_reset_token(token_hash)
+
+    if not token_row:
+        flash("Invalid or expired reset link.", "danger")
+        return render_template("reset_password.html", token=token)
+
+    expires_at = _parse_db_datetime(token_row["expires_at"])
+    used_at = _parse_db_datetime(token_row["used_at"])
+    if used_at or (expires_at and expires_at < datetime.utcnow()):
+        flash("This reset link has expired. Please request a new one.", "danger")
+        return render_template("reset_password.html", token=token)
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not password or not confirm_password:
+            flash("Please fill in both password fields.", "warning")
+            return render_template("reset_password.html", token=token)
+
+        if password != confirm_password:
+            flash("Passwords do not match.", "danger")
+            return render_template("reset_password.html", token=token)
+
+        conn = get_db_connection()
+        conn.execute(
+            "UPDATE users SET password = ? WHERE id = ?",
+            (_hash_password(password), token_row["user_id"]),
+        )
+        conn.commit()
+        conn.close()
+
+        _mark_token_used(token_row["id"], datetime.utcnow())
+
+        flash("Password reset successful. Please log in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html", token=token)
 
 
 # -----------------------------
